@@ -41,7 +41,7 @@ h1,h2,h3{margin:6px 0 10px;font-weight:400}h1{font-size:20px}h2{font-size:13px}h
 .pod{display:flex;align-items:flex-end;gap:8px;margin:16px}.pod div{background:var(--acc);border:4px solid var(--line);padding:6px;min-width:110px}
 @media(max-width:700px){.row{grid-template-columns:1fr}.arena{height:auto}.row>*{min-height:220px}.big{font-size:36px}}
 </style></head><body>
-<div id="app"></div><div id="ov"></div><div id="modal"></div>
+<div id="app"><div style="padding:20px">Loading TRN...</div></div><div id="ov"></div><div id="modal"></div>
 <script src="/config.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -59,7 +59,7 @@ function img(id,cb){const f=$(id).files[0];if(!f)return cb(null);if(f.size>40000
 function bar(extra){return `<div id="bar"><img src="${st&&st.logo||ICON}" alt=""><b>${esc(st?st.name:'TRN')}</b><span class="mut">trn.geocornr.com${st?'/'+st.slug:''}</span><span class="sp"></span>${extra||''}${user?`<span>👤 ${esc(user.name)}</span><button class="btn s r" onclick="Clerk.signOut().then(()=>location.href='/')">Sign out</button>`:''}</div>`}
 
 /* ---------- sign in (Clerk) ---------- */
-function loadClerk(){return new Promise((res,rej)=>{const pk=window.CLERK_PK;if(!pk)return rej('CLERK_PUBLISHABLE_KEY is not set on the server');
+function loadClerk(){return new Promise((res,rej)=>{setTimeout(()=>rej('Clerk did not load in 15s. Check that CLERK_PUBLISHABLE_KEY on Render is the full pk_test_... key, then redeploy.'),15000);const pk=window.CLERK_PK;if(!pk)return rej('CLERK_PUBLISHABLE_KEY is not set on the server');
   const host=atob(pk.split('_')[2]).slice(0,-1),s=document.createElement('script');
   s.src='https://'+host+'/npm/@clerk/clerk-js@5/dist/clerk.browser.js';s.async=true;s.crossOrigin='anonymous';s.setAttribute('data-clerk-publishable-key',pk);
   s.onload=async()=>{try{await window.Clerk.load();res()}catch(e){rej(String(e))}};s.onerror=()=>rej('Could not load Clerk');document.head.append(s)})}
@@ -113,15 +113,15 @@ function onState(s){
   render();sync()}
 const cr=()=>st.role==='creator';
 function render(){
-  $('#app').innerHTML=bar(cr()?'<span class="mut">CREATOR</span>':st.ghost?'<span>👻 GHOST</span>':'')+`<div class="arena">${top()}${bottom()}</div>`;
+  $('#app').innerHTML=bar(cr()?'<span class="mut">CREATOR</span>':st.ghost?'<span>👻 GHOST</span>':'')+`<div class="arena">${topHalf()}${bottomHalf()}</div>`;
   fillSlots();renderOv()}
-function top(){
+function topHalf(){
   const list=st.players.map(p=>`<div class="pl ${p.ghost?'gh':''}"><span>${p.ghost?'👻':'⛏'} ${esc(p.name)}${p.sub===st.me?' (you)':''}</span>${cr()?`<button class="btn s ${p.ghost?'o':'r'}" onclick="sock.emit('ghost',{sub:'${p.sub}',ghost:${!p.ghost}})">${p.ghost?'Revive':'Ghost'}</button>`:''}</div>`).join('');
   return `<div class="row"><div class="video"><div class="slot" data-k="stage"></div>${cr()?`<div style="position:absolute;bottom:6px;left:6px;z-index:2">${stage?'<button class="btn s r" onclick="stopLive()">■ End stream</button>':'<button class="btn s o" onclick="goLive(\'cam\')">📷 Go live</button><button class="btn s" onclick="goLive(\'scr\')">🖥 Share screen</button>'}</div>`:''}</div>
   <div class="box"><h3>Players ${st.players.filter(p=>!p.ghost).length}${cr()?` · ${st.joined}/${st.min} min`:''}</h3>${list}</div></div>`}
 function evCard(e){return `<div class="ev"><b>${esc(e.name)}</b> <span class="mut">${new Date(e.at).toLocaleString()}</span><br>${e.T} team(s) × ${e.P} · ${e.timed?'Timed '+e.dur+'s':'Objective'}<br>${esc(e.obj)}<br>${cr()?e.teams.map((t,i)=>`<span class="mut">T${i+1}: ${t.map(esc).join(', ')}</span><br>`).join('')+`<button class="btn s o" ${st.run?'disabled':''} onclick="sock.emit('event:start','${e.id}')">▶ Start now</button>`:''}</div>`}
 function recList(){return st.recs.length?st.recs.map(r=>`<div class="ev"><b>${esc(r.name)}</b><br><span class="mut">Won: ${(r.winners||[]).map(esc).join(', ')||'nobody'}</span><br>${r.files.map(f=>`<button class="btn s" onclick="watch('${f.url}','${esc(f.name)}')">▶ ${esc(f.name)}</button>`).join('')||'<span class="mut">no video</span>'}</div>`).join(''):'<p class="mut">No matches yet.</p>'}
-function bottom(){
+function bottomHalf(){
   if(cr())return `<div class="row" style="grid-template-columns:1fr 1fr"><div class="box"><h3>Upcoming &amp; current events</h3><button class="btn o" ${st.run||st.phase!=='idle'?'disabled':''} onclick="evModal()">＋ Create event</button>${st.events.map(evCard).join('')||'<p class="mut">No events yet.</p>'}</div><div class="box"><h3>Recordings</h3>${recList()}</div></div>`;
   const rem=st.events.filter(e=>e.mine).map(e=>`<div class="ev"><b>${esc(e.name)}</b> ${new Date(e.at).toLocaleString()}<br>Team ${e.mine.team} with ${e.mine.mates.map(esc).join(', ')||'nobody (solo)'}<br>${esc(e.obj)}</div>`).join('')||'<p class="mut">No events involve you.</p>';
   return `<div class="box"><div class="tabs">${[['up','Upcoming'],['rem','Reminders'],['rec','Recordings']].map(([k,l])=>`<button class="btn s ${tab===k?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('')}</div>${st.ghost?'<p class="mut">👻 You are a ghost. Watch only.</p>':''}${tab==='up'?st.events.map(e=>({...e,teams:undefined})).map(evCard).join('')||'<p class="mut">Nothing scheduled.</p>':tab==='rem'?rem:recList()}</div>`}
@@ -185,5 +185,7 @@ function syncRec(){if(!st||!st.run||st.role!=='creator'||st.run.phase!=='live'||
     mr.onstop=()=>fetch(`/upload/${slug}/${eid}/${p.sub}`,{method:'POST',headers:{'x-key':key},body:new Blob(ch,{type:'video/webm'})});
     mr.start(2000);recs[k]=mr})}
 function stopRec(){Object.keys(recs).forEach(k=>{if(recs[k].state!=='inactive')recs[k].stop();delete recs[k]})}
+const showErr=m=>{$('#app').innerHTML='<div class="wrap"><div class="box"><h2>Something broke</h2><p style="word-break:break-word">'+esc(m)+'</p></div></div>'};
+window.addEventListener('error',e=>showErr(e.message));window.addEventListener('unhandledrejection',e=>showErr(e.reason&&e.reason.message||e.reason));
 boot();
 </script></body></html>
