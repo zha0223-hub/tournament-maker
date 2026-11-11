@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TRN</title>
+<link rel="icon" type="image/png" href="/icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#2b2118;--panel:#3d2f22;--ink:#f4ecd8;--acc:#4a6fb5;--acc2:#d9792b;--line:#150f0a}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:10px/1.7 'Press Start 2P','Courier New',monospace}
+body.g{filter:grayscale(1)}
+img{image-rendering:pixelated}
+.box{background:var(--panel);border:4px solid var(--line);box-shadow:inset -4px -4px 0 #0006,inset 4px 4px 0 #fff2;padding:10px}
+.btn{font:inherit;background:var(--acc);color:#fff;border:4px solid var(--line);padding:8px 10px;cursor:pointer;box-shadow:inset -4px -4px 0 #0006,inset 4px 4px 0 #fff3;margin:2px}
+.btn.o{background:var(--acc2)}.btn.r{background:#a63a2e}.btn.s{padding:4px 6px;font-size:8px}
+.btn:active{transform:translateY(2px)}.btn:disabled{opacity:.4}
+input,select,textarea{font:inherit;background:#1d150e;color:var(--ink);border:4px solid var(--line);padding:6px;width:100%;margin:3px 0 8px;box-shadow:inset 3px 3px 0 #0008}
+input[type=checkbox]{width:auto}label{display:block;color:#cdbf9f}
+h1,h2,h3{margin:6px 0 10px;font-weight:400}h1{font-size:20px}h2{font-size:13px}h3{font-size:10px;color:var(--acc2)}
+#bar{display:flex;gap:8px;align-items:center;padding:8px 12px;background:#150f0a;border-bottom:4px solid var(--acc);flex-wrap:wrap}
+#bar img{width:28px;height:28px}.sp{flex:1}.mut{color:#9c8d70}
+.wrap{max-width:720px;margin:20px auto;padding:0 12px}
+.arena{display:grid;grid-template-rows:1fr 1fr;gap:8px;padding:8px;height:calc(100vh - 56px);min-height:620px}
+.row{display:grid;grid-template-columns:2fr 1fr;gap:8px;min-height:0}.row>*{overflow:auto;min-height:0}
+.video{background:#000;border:4px solid var(--line);position:relative;display:flex;align-items:center;justify-content:center;flex-direction:column}
+.video .slot{position:absolute;inset:0}
+.slot video{width:100%;height:100%;object-fit:contain;background:#000;display:block}
+.slot:empty::before{content:'waiting for video...';color:#9c8d70;font-size:8px;display:block;padding:10px}
+.pl{display:flex;justify-content:space-between;align-items:center;padding:4px;border-bottom:2px dashed #0005}.pl.gh{opacity:.5}
+.ev{border:3px solid var(--line);background:#2a2018;padding:6px;margin-bottom:6px}
+.tabs .on{background:var(--acc2)}
+.ov{position:fixed;inset:0;background:#000;z-index:50;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:16px;overflow:auto}
+.big{font-size:56px}.flash{animation:fl 1s steps(2) infinite}@keyframes fl{50%{opacity:.15}}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;width:100%}
+.tile{border:4px solid var(--line);cursor:pointer;background:#222}.tile .nm{background:var(--acc);padding:3px;font-size:9px}
+.tile .slot{aspect-ratio:16/9}
+.pop{position:fixed;top:64px;right:12px;z-index:60;background:var(--acc2);border:4px solid var(--line);padding:8px 12px;color:#fff}
+#modal{position:fixed;inset:0;background:#000a;z-index:70;display:none;align-items:center;justify-content:center;padding:12px}
+#modal .box{max-width:460px;width:100%;max-height:92vh;overflow:auto}
+.toast{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:var(--acc2);border:4px solid var(--line);padding:8px 12px;z-index:99;color:#fff;max-width:90vw}
+.pod{display:flex;align-items:flex-end;gap:8px;margin:16px}.pod div{background:var(--acc);border:4px solid var(--line);padding:6px;min-width:110px}
+@media(max-width:700px){.row{grid-template-columns:1fr}.arena{height:auto}.row>*{min-height:220px}.big{font-size:36px}}
+</style></head><body>
+<div id="app"></div><div id="ov"></div><div id="modal"></div>
+<script src="/config.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const THEMES={Grass:['#34502a','#5b9b34'],Stone:['#3a3a3a','#7a8794'],Lava:['#47231a','#e0561f'],Ocean:['#1a3347','#2f8fbf'],Sand:['#4d4128','#d1a54b']};
+const ICE=[{urls:'stun:stun.l.google.com:19302'}]; // add a TURN server here for strict networks
+const $=s=>document.querySelector(s),esc=t=>String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=s=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+const slug=location.pathname.replace(/^\/+|\/+$/g,'');
+let sock,st=null,user=null,off=0,tab='up',maxK=null,logoData=null,picData=null;
+let vids=new Map(),pcs={},myScreen=null,stage=null,recs={};
+const ICON='/icon.png';
+function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.append(d);setTimeout(()=>d.remove(),4500)}
+function jwt(t){try{return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))}catch(e){return null}}
+function img(id,cb){const f=$(id).files[0];if(!f)return cb(null);if(f.size>400000){toast('Image must be under 400KB');return cb(null)}const r=new FileReader();r.onload=()=>cb(r.result);r.readAsDataURL(f)}
+function bar(extra){return `<div id="bar"><img src="${st&&st.logo||ICON}" alt=""><b>${esc(st?st.name:'TRN')}</b><span class="mut">trn.geocornr.com${st?'/'+st.slug:''}</span><span class="sp"></span>${extra||''}${user?`<span>👤 ${esc(user.name)}</span><button class="btn s r" onclick="Clerk.signOut().then(()=>location.href='/')">Sign out</button>`:''}</div>`}
+
+/* ---------- sign in (Clerk) ---------- */
+function loadClerk(){return new Promise((res,rej)=>{const pk=window.CLERK_PK;if(!pk)return rej('CLERK_PUBLISHABLE_KEY is not set on the server');
+  const host=atob(pk.split('_')[2]).slice(0,-1),s=document.createElement('script');
+  s.src='https://'+host+'/npm/@clerk/clerk-js@5/dist/clerk.browser.js';s.async=true;s.crossOrigin='anonymous';s.setAttribute('data-clerk-publishable-key',pk);
+  s.onload=async()=>{try{await window.Clerk.load();res()}catch(e){rej(String(e))}};s.onerror=()=>rej('Could not load Clerk');document.head.append(s)})}
+function boot(){loadClerk().then(()=>{if(Clerk.user){user={name:Clerk.user.fullName||Clerk.user.username||'Player'};connect()}else login()})
+  .catch(e=>{$('#app').innerHTML=bar()+`<div class="wrap"><div class="box"><h2>Sign-in failed to load</h2><p>${esc(e)}</p></div></div>`})}
+function login(){
+  document.body.className='';$('#ov').innerHTML='';$('#ov').className='';
+  $('#app').innerHTML=bar()+`<div class="wrap" style="text-align:center"><img src="${ICON}" width="128" height="128" alt=""><h1>TRN</h1><p>Live elimination tournaments.</p><div id="gbtn" style="display:flex;justify-content:center"></div></div>`;
+  Clerk.mountSignIn($('#gbtn'),{forceRedirectUrl:location.href,signUpForceRedirectUrl:location.href})}
+function connect(){
+  if(sock)sock.disconnect();
+  sock=io({auth:async cb=>cb({token:await Clerk.session.getToken()})});
+  sock.on('connect_error',e=>{if(e.message==='auth'){toast('Sign-in rejected. Try signing in again.');Clerk.signOut().then(login)}});
+  sock.on('connect',entry);
+  sock.on('state',onState);sock.on('alert',toast);
+  sock.on('ended',()=>{toast('Tournament finished. The backslash is free again.');st=null;closeAll();history.pushState(0,'','/');entry()});
+  sock.on('peer',sub=>{if(stage)sendTo(sub,'stage',stage)});
+  sock.on('rtc',onRtc)}
+function entry(){
+  if(!slug)return dash();
+  sock.emit('room:peek',slug,r=>{
+    if(r.err){$('#app').innerHTML=bar()+`<div class="wrap"><div class="box"><h2>${esc(r.err)}</h2><a href="/"><button class="btn o">Home</button></a></div></div>`;return}
+    if(r.creator||r.joined)return sock.emit('room:join',{slug},x=>x.err&&toast(x.err));
+    gate(r)})}
+
+/* ---------- pages before the arena ---------- */
+function dash(){
+  logoData=null;document.body.className='';
+  $('#app').innerHTML=bar()+`<div class="wrap"><div class="box"><h2>New competition</h2>
+  <label>Name</label><input id="c_name" maxlength="30">
+  <label>Rules (players must agree)</label><textarea id="c_rules" rows="4"></textarea>
+  <label>Theme</label><select id="c_theme">${Object.keys(THEMES).map(t=>`<option>${t}</option>`).join('')}</select>
+  <label>Logo (optional, under 400KB)</label><input id="c_logo" type="file" accept="image/*">
+  <label>Minimum players</label><input id="c_min" type="number" min="2" value="8">
+  <label>Winners (less than minimum)</label><input id="c_win" type="number" min="1" value="3">
+  <label>Claim trn.geocornr.com/</label><input id="c_slug" maxlength="20" placeholder="my-cup">
+  <button class="btn o" onclick="mk()">Create ▶</button></div></div>`}
+function mk(){img('#c_logo',logo=>sock.emit('comp:create',{name:$('#c_name').value,rules:$('#c_rules').value,theme:$('#c_theme').value,logo,min:$('#c_min').value,win:$('#c_win').value,slug:$('#c_slug').value.trim().toLowerCase()},r=>{
+  if(r.err)return toast(r.err);location.href='/'+r.slug}))}
+function gate(r){
+  $('#app').innerHTML=bar()+`<div class="wrap"><div class="box"><h2>${esc(r.name)}</h2><h3>Rules</h3><p style="white-space:pre-wrap">${esc(r.rules)}</p>
+  <label>Display name</label><input id="dn" maxlength="14"><label><input type="checkbox" id="ag"> I agree to the rules</label>
+  <button class="btn o" onclick="jn()">Enter arena ▶</button></div></div>`}
+function jn(){sock.emit('room:join',{slug,name:$('#dn').value,agree:$('#ag').checked},r=>r.err&&toast(r.err))}
+
+/* ---------- arena ---------- */
+function onState(s){
+  st=s;off=s.now-Date.now();
+  const t=THEMES[s.theme];document.documentElement.style.setProperty('--panel',t[0]);document.documentElement.style.setProperty('--acc',t[1]);
+  document.body.className=s.ghost?'g':'';
+  render();sync()}
+const cr=()=>st.role==='creator';
+function render(){
+  $('#app').innerHTML=bar(cr()?'<span class="mut">CREATOR</span>':st.ghost?'<span>👻 GHOST</span>':'')+`<div class="arena">${top()}${bottom()}</div>`;
+  fillSlots();renderOv()}
+function top(){
+  const list=st.players.map(p=>`<div class="pl ${p.ghost?'gh':''}"><span>${p.ghost?'👻':'⛏'} ${esc(p.name)}${p.sub===st.me?' (you)':''}</span>${cr()?`<button class="btn s ${p.ghost?'o':'r'}" onclick="sock.emit('ghost',{sub:'${p.sub}',ghost:${!p.ghost}})">${p.ghost?'Revive':'Ghost'}</button>`:''}</div>`).join('');
+  return `<div class="row"><div class="video"><div class="slot" data-k="stage"></div>${cr()?`<div style="position:absolute;bottom:6px;left:6px;z-index:2">${stage?'<button class="btn s r" onclick="stopLive()">■ End stream</button>':'<button class="btn s o" onclick="goLive(\'cam\')">📷 Go live</button><button class="btn s" onclick="goLive(\'scr\')">🖥 Share screen</button>'}</div>`:''}</div>
+  <div class="box"><h3>Players ${st.players.filter(p=>!p.ghost).length}${cr()?` · ${st.joined}/${st.min} min`:''}</h3>${list}</div></div>`}
+function evCard(e){return `<div class="ev"><b>${esc(e.name)}</b> <span class="mut">${new Date(e.at).toLocaleString()}</span><br>${e.T} team(s) × ${e.P} · ${e.timed?'Timed '+e.dur+'s':'Objective'}<br>${esc(e.obj)}<br>${cr()?e.teams.map((t,i)=>`<span class="mut">T${i+1}: ${t.map(esc).join(', ')}</span><br>`).join('')+`<button class="btn s o" ${st.run?'disabled':''} onclick="sock.emit('event:start','${e.id}')">▶ Start now</button>`:''}</div>`}
+function recList(){return st.recs.length?st.recs.map(r=>`<div class="ev"><b>${esc(r.name)}</b><br><span class="mut">Won: ${(r.winners||[]).map(esc).join(', ')||'nobody'}</span><br>${r.files.map(f=>`<button class="btn s" onclick="watch('${f.url}','${esc(f.name)}')">▶ ${esc(f.name)}</button>`).join('')||'<span class="mut">no video</span>'}</div>`).join(''):'<p class="mut">No matches yet.</p>'}
+function bottom(){
+  if(cr())return `<div class="row" style="grid-template-columns:1fr 1fr"><div class="box"><h3>Upcoming &amp; current events</h3><button class="btn o" ${st.run||st.phase!=='idle'?'disabled':''} onclick="evModal()">＋ Create event</button>${st.events.map(evCard).join('')||'<p class="mut">No events yet.</p>'}</div><div class="box"><h3>Recordings</h3>${recList()}</div></div>`;
+  const rem=st.events.filter(e=>e.mine).map(e=>`<div class="ev"><b>${esc(e.name)}</b> ${new Date(e.at).toLocaleString()}<br>Team ${e.mine.team} with ${e.mine.mates.map(esc).join(', ')||'nobody (solo)'}<br>${esc(e.obj)}</div>`).join('')||'<p class="mut">No events involve you.</p>';
+  return `<div class="box"><div class="tabs">${[['up','Upcoming'],['rem','Reminders'],['rec','Recordings']].map(([k,l])=>`<button class="btn s ${tab===k?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('')}</div>${st.ghost?'<p class="mut">👻 You are a ghost. Watch only.</p>':''}${tab==='up'?st.events.map(e=>({...e,teams:undefined})).map(evCard).join('')||'<p class="mut">Nothing scheduled.</p>':tab==='rem'?rem:recList()}</div>`}
+function evModal(){const m=$('#modal');m.style.display='flex';m.innerHTML=`<div class="box"><h2>Create event</h2><label>Event name</label><input id="e_n"><label>Time (blank or past = in 1 minute)</label><input id="e_t" type="datetime-local"><label>Number of teams (1+)</label><input id="e_T" type="number" min="1" value="2"><label>Players per team (1+)</label><input id="e_P" type="number" min="1" value="1"><label>Objective</label><textarea id="e_o" rows="2"></textarea><label>Type</label><select id="e_k" onchange="$('#dw').style.display=this.value=='t'?'block':'none'"><option value="o">Objective (you end it)</option><option value="t">Timed</option></select><div id="dw" style="display:none"><label>Countdown seconds</label><input id="e_d" type="number" min="5" value="60"></div><button class="btn o" onclick="mkEv()">Create &amp; draw teams</button><button class="btn r" onclick="closeModal()">Cancel</button></div>`}
+function closeModal(){$('#modal').style.display='none';$('#modal').innerHTML=''}
+function mkEv(){sock.emit('event:create',{name:$('#e_n').value,at:$('#e_t').value?new Date($('#e_t').value).getTime():0,T:$('#e_T').value,P:$('#e_P').value,obj:$('#e_o').value,timed:$('#e_k').value==='t',dur:$('#e_d').value},r=>{if(r.err)return toast(r.err);closeModal();toast('Teams drawn. Emails sent.')})}
+function watch(url,n){const m=$('#modal');m.style.display='flex';m.innerHTML=`<div class="box"><h2>${esc(n)}</h2><video src="${url}" controls autoplay style="width:100%"></video><button class="btn r" onclick="closeModal()">Close</button></div>`}
+
+/* ---------- overlays ---------- */
+function renderOv(){
+  const o=$('#ov'),r=st.run;let k='',h='';
+  if(st.phase==='prize'){k='prize';const p=st.prize;h=`<h1>🏆 Winners</h1><div class="pod">${st.winners.map(n=>`<div>${esc(n)}</div>`).join('')}</div><div class="box"><h2>PRIZE: ${esc(p.text)}</h2>${p.pic?`<img src="${p.pic}" style="max-width:160px;max-height:160px">`:'<div class="big">🎁</div>'}<p class="mut">Winners were emailed.</p></div><h2>Closing in <span class="flash" data-end="${st.endsAt}"></span></h2>`}
+  else if(st.phase==='podium'){k=cr()?'podium-c':'podium';if(cr()&&$('#pz')&&o.dataset.k===k)return;
+    h=`<h1>🏁 Podium</h1><div class="pod">${st.winners.map((n,i)=>`<div style="height:${70+(st.winners.length-i)*30}px">#${i+1}<br>${esc(n)}</div>`).join('')}</div>`+(cr()?`<div class="box" style="text-align:left;max-width:420px;width:100%"><h2>Award the prize</h2><label>Prize</label><input id="pz" maxlength="80"><label>Picture</label><input id="pp" type="file" accept="image/*"><label>Email to winners</label><textarea id="pm" rows="3">Congrats! You won ${esc(st.name)}.</textarea><button class="btn o" onclick="award()">Reveal &amp; send email</button></div>`:'<p class="flash">Creator is picking the prize...</p>')}
+  else if(r){k='run-'+r.phase+maxK;
+    if(r.phase==='pre')h=`<div class="big flash" data-end="${r.endsAt}"></div>`+(r.competing&&!st.ghost?(r.shared[st.me]?'<p class="mut">Screen shared ✔</p>':'<button class="btn o" onclick="shareScreen()">🖥 Share my screen</button><p class="mut">No share = automatic win for the others</p>'):'');
+    else if(r.phase==='obj')h=`<h3>OBJECTIVE</h3><h1>${esc(r.obj)}</h1>`;
+    else if(r.phase==='decide')h=cr()?`<h2>Choose the winner</h2>${r.teams.length>1?r.teams.map((t,i)=>`<button class="btn o" onclick="sock.emit('event:decide',${i})">Team ${i+1}: ${t.map(x=>esc(x.name)).join(', ')}</button>`).join(''):'<button class="btn o" onclick="sock.emit(\'event:decide\',0)">Team passed</button>'}<button class="btn r" onclick="sock.emit('event:decide',-1)">${r.teams.length>1?'Nobody wins':'Team failed'}</button>`:'<h1 class="flash">The creator is deciding...</h1>';
+    else{const pop=r.timed?`<div class="pop">⏱ <span data-end="${r.endsAt}"></span></div>`:'';
+      if(r.competing&&!cr())h=`${pop}<h3>YOU ARE LIVE · TEAM ${r.myTeam+1}</h3><h1>${esc(r.obj)}</h1><p class="mut">Your screen is being shared.</p>`;
+      else{const names=r.teams.flat();const tile=(p,m)=>`<div class="tile" ${m?'':`onclick="maxK='${p.sub}';renderOv()"`}><div class="nm">${esc(p.name)}${m?' · Esc to go back':''}</div><div class="slot" data-k="${p.sub}:screen"></div></div>`;
+        h=`${pop}<div style="width:100%;display:flex;gap:8px;align-items:center"><b>${esc(r.name)}</b><span class="mut">${esc(r.obj)}</span><span class="sp"></span>${cr()?`<button class="btn r" onclick="sock.emit('event:stop')">■ Stop</button>`:''}${r.timed?'':`<span data-up="${r.startedAt}"></span>`}</div>`+(maxK&&names.find(p=>p.sub===maxK)?tile(names.find(p=>p.sub===maxK),1):`<div class="grid">${names.map(p=>tile(p)).join('')}</div>`)}}}
+  o.dataset.k=k;o.className=k?'ov':'';o.innerHTML=h;fillSlots()}
+function award(){img('#pp',pic=>sock.emit('prize:award',{text:$('#pz').value,pic,message:$('#pm').value},r=>r&&r.err&&toast(r.err)))}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&maxK){maxK=null;renderOv()}});
+setInterval(()=>{const n=Date.now()+off;
+  document.querySelectorAll('[data-end]').forEach(e=>e.textContent=fmt(Math.max(0,Math.ceil((+e.dataset.end-n)/1000))));
+  document.querySelectorAll('[data-up]').forEach(e=>e.textContent=fmt(Math.max(0,Math.floor((n-e.dataset.up)/1000))))},250);
+
+/* ---------- WebRTC (screens + creator stream) ---------- */
+function fillSlots(){document.querySelectorAll('.slot').forEach(s=>{const v=vids.get(s.dataset.k);if(v&&v.parentNode!==s){s.appendChild(v);v.play().catch(()=>{})}})}
+function vidFor(key,stream){let v=vids.get(key);if(!v){v=document.createElement('video');v.autoplay=true;v.playsInline=true;vids.set(key,v)}v.muted=key!=='stage';v.srcObject=stream;v.play().catch(()=>{v.muted=true;v.play().catch(()=>{})});fillSlots();syncRec()}
+function mkpc(peer,kind,dir){const k=peer+':'+kind+':'+dir;if(pcs[k])return pcs[k];const pc=new RTCPeerConnection({iceServers:ICE});pcs[k]=pc;
+  pc.onicecandidate=e=>e.candidate&&sock.emit('rtc',{to:peer,kind,type:'ice',dir,data:e.candidate});
+  if(dir==='in')pc.ontrack=e=>vidFor(kind==='stage'?'stage':peer+':screen',e.streams[0]);
+  pc.onconnectionstatechange=()=>{if(['failed','closed'].includes(pc.connectionState)){pc.close();if(pcs[k]===pc)delete pcs[k]}};
+  return pc}
+async function sendTo(peer,kind,stream){const k=peer+':'+kind+':out';if(pcs[k])return;const pc=mkpc(peer,kind,'out');stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+  await pc.setLocalDescription(await pc.createOffer());sock.emit('rtc',{to:peer,kind,type:'offer',dir:'out',data:pc.localDescription})}
+async function onRtc(m){
+  if(m.type==='offer'){const pc=mkpc(m.from,m.kind,'in');await pc.setRemoteDescription(m.data);await pc.setLocalDescription(await pc.createAnswer());sock.emit('rtc',{to:m.from,kind:m.kind,type:'answer',dir:'in',data:pc.localDescription})}
+  else if(m.type==='answer'){const pc=pcs[m.from+':'+m.kind+':out'];if(pc)await pc.setRemoteDescription(m.data)}
+  else{const add=n=>{const pc=pcs[m.from+':'+m.kind+':'+(m.dir==='out'?'in':'out')];if(pc&&pc.remoteDescription)pc.addIceCandidate(m.data).catch(()=>{});else if(n)setTimeout(()=>add(n-1),400)};add(5)}}
+function closeKind(kind){Object.keys(pcs).forEach(k=>{if(k.split(':')[1]===kind){pcs[k].close();delete pcs[k]}});
+  if(kind==='screen')[...vids.keys()].forEach(k=>{if(k.endsWith(':screen')){vids.get(k).remove();vids.delete(k)}})}
+function closeAll(){closeKind('screen');closeKind('stage');if(stage){stage.getTracks().forEach(t=>t.stop());stage=null}vids.clear()}
+function shareScreen(){navigator.mediaDevices.getDisplayMedia({video:true,audio:false}).then(s=>{myScreen=s;s.getVideoTracks()[0].onended=()=>{myScreen=null};sock.emit('screen:shared')}).catch(()=>toast('Screen share was cancelled'))}
+function goLive(kind){const p=kind==='cam'?navigator.mediaDevices.getUserMedia({video:true,audio:true}):navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+  p.then(s=>{stage=s;vidFor('stage',s);st.players.forEach(p=>sendTo(p.sub,'stage',s));render()}).catch(()=>toast('Could not start the stream'))}
+function stopLive(){stage.getTracks().forEach(t=>t.stop());stage=null;closeKind('stage');const v=vids.get('stage');if(v){v.remove();vids.delete('stage')}render()}
+function sync(){const r=st.run;
+  if(!r){closeKind('screen');stopRec();if(myScreen){myScreen.getTracks().forEach(t=>t.stop());myScreen=null}return}
+  if(r.phase==='live'&&r.competing&&myScreen)(r.viewers||[]).forEach(v=>sendTo(v,'screen',myScreen));
+  if(r.phase!=='live')stopRec();else syncRec()}
+/* creator's browser records each competitor screen and uploads it when the live phase ends */
+function syncRec(){if(!st||!st.run||st.role!=='creator'||st.run.phase!=='live'||!window.MediaRecorder)return;
+  const eid=st.run.id,slug=st.slug,key=st.key;
+  st.run.teams.flat().forEach(p=>{const v=vids.get(p.sub+':screen'),k=eid+':'+p.sub;
+    if(!v||!v.srcObject||recs[k])return;const ch=[],mr=new MediaRecorder(v.srcObject);
+    mr.ondataavailable=e=>e.data.size&&ch.push(e.data);
+    mr.onstop=()=>fetch(`/upload/${slug}/${eid}/${p.sub}`,{method:'POST',headers:{'x-key':key},body:new Blob(ch,{type:'video/webm'})});
+    mr.start(2000);recs[k]=mr})}
+function stopRec(){Object.keys(recs).forEach(k=>{if(recs[k].state!=='inactive')recs[k].stop();delete recs[k]})}
+boot();
+</script></body></html>
